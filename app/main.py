@@ -1,12 +1,3 @@
-"""Employee Attendance & Analytics API.
-
-Run from the project root:
-    uvicorn app.main:app --port 8000
-
-Configuration:
-    MONGO_URI
-    MONGO_DB
-"""
 import os
 import re
 import json
@@ -57,11 +48,6 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
-
-
-# =========================================================
-# DATABASE INDEXES
-# =========================================================
 
 def create_indexes():
     """Create indexes safely when the application starts."""
@@ -309,7 +295,6 @@ def derived_fields(
             (as_utc(pout) - end.astimezone(UTC)).total_seconds()
         )
 
-        # Overtime counts only when at least 30 minutes are completed.
         overtime = extra // 60 if extra >= 1800 else 0
 
     return {
