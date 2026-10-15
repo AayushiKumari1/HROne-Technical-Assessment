@@ -1,47 +1,52 @@
 # Employee Attendance & Analytics API
 
-FastAPI + MongoDB service for punch-in/out, manual corrections with an audit trail, and attendance analytics.
-All code is in `app/main.py`.
+A FastAPI and MongoDB service that records employee punch-ins and punch-outs, supports manual corrections with an audit trail, and provides attendance analytics. All application code is in `app/main.py`.
 
-## Run locally
+## Running locally
 
-Requires Python 3.11+ and MongoDB 6.0 or newer (local Docker or a free Atlas cluster).
+**Requirements:** Python 3.11 or newer, and MongoDB 6.0 or newer (a local Docker container or a free Atlas cluster both work).
 
 ```bash
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-docker run -d -p 27017:27017 --name mongo mongo:7     # or use an Atlas connection string
+docker run -d -p 27017:27017 --name mongo mongo:7    # or use an Atlas connection string
 ```
 
-Create a `.env` file in the project root (it is not committed):
+Create a `.env` file in the project root. It is excluded from version control.
 
 ```
 MONGO_URI=mongodb://localhost:27017
 MONGO_DB=attendance_db
 ```
 
-Start the API (indexes are created at startup):
+Start the API. Indexes are created automatically at startup.
 
 ```bash
 uvicorn app.main:app --port 8000
 ```
 
-Interactive docs: http://localhost:8000/docs
+Interactive API documentation is available at http://localhost:8000/docs.
 
-## What is implemented
+## What is included
 
-- Starter fixes (see `REVIEW.md`): late/overtime/work-hours rules in IST with half-up rounding, validation, pagination, indexes, unique constraints for punch-in and employee codes, `/health` returning 503 when MongoDB is down.
-- `POST /attendance/punch-out`: closes the latest record at or before `punched_at` with one atomic update, works across midnight.
-- `PATCH /attendance/{emp_code}/{date}`: manual correction that recomputes derived fields and appends one history entry; concurrent edits are guarded by a compare-and-set on the history length.
-- Analytics through MongoDB aggregation pipelines: employee monthly summary, department summary, late leaderboard (standard competition ranking with `$rank`), and department trend (`$densify` for gap filling, `$setWindowFields` for the 7-day moving average).
-- `GET /admin/explain/{endpoint}`: runs `explain("executionStats")` on the same query each endpoint uses.
+- **Starter fixes** (details in `REVIEW.md`): late, overtime and work-hour rules calculated in IST with half-up rounding; input validation; corrected pagination; indexes; unique constraints for employee codes and daily punch-ins; and a `/health` endpoint that returns 503 when MongoDB is unavailable.
+- **Punch-out** (`POST /attendance/punch-out`): closes the employee's latest record at or before `punched_at` using a single atomic update, including across midnight.
+- **Manual correction** (`PATCH /attendance/{emp_code}/{date}`): recomputes derived fields and appends one audit entry per correction. Concurrent edits are protected by a compare-and-set check on the history length.
+- **Analytics**, all built on MongoDB aggregation pipelines:
+  - employee monthly summary
+  - department summary
+  - late leaderboard, using `$rank` for standard competition ranking
+  - department trend, using `$densify` to fill missing days and `$setWindowFields` for the 7-day moving average
+- **Query plans** (`GET /admin/explain/{endpoint}`): returns `explain("executionStats")` for the same query each endpoint runs.
 
-## Notes and assumptions
+## Design notes and assumptions
 
-- `attendance_pct` is rounded to 4 decimals half-up. I read R8 ("rates: 4 decimals") as covering percentages.
-- Records are not filtered by `joined_on`; it is used only for working days (R7) and headcount (R9).
-- The trend computes rates with integer arithmetic so rounding is exactly half-up (MongoDB's `$round` rounds ties to even).
+- `attendance_pct` is rounded to four decimals, half-up. I interpreted the rounding rule for rates (R8) as covering percentages.
+- `joined_on` is used only to count working days (R7) and headcount (R9). Attendance records are not filtered by it.
+- The trend calculates rates with integer arithmetic so that rounding is exactly half-up, because MongoDB's `$round` rounds ties to the nearest even number.
 
-## Testing
+## Limitations and testing
 
-- Tested against the sample data only. I did not test with a large dataset or run a concurrency load test.
+- Tested against the provided sample data only. I have not run it against a large dataset or performed a concurrency load test.
+- _(Update this section to reflect what you have and have not tested.)_
