@@ -1,21 +1,11 @@
 # DECISIONS.md
 
-## 1. Index choices
+1. **Indexes.** `uq_employee_code` and `uq_attendance_employee_date` (emp_code, date) are unique, so there is one employee per code and one record per employee per day. `attendance_date_emp` serves the attendance list sort. `attendance_late_date` (date, late_minutes) serves the leaderboard. `employee_department_joined` and `employee_joined_on` serve headcount. `attendance_employee_punch_in` finds the record to punch out. I rejected an index on `status` alone: it is rarely the only filter and every index slows writes.
 
-I use a unique index on `employees.emp_code` to enforce employee-code uniqueness and support employee lookups. A unique compound index on `logs.emp_code` and `logs.date` prevents duplicate daily attendance records. Additional indexes support attendance sorting, punch-out lookups, late-arrival leaderboard queries, and employee headcount filtering. I would avoid an index on `status` alone unless query analysis demonstrates a benefit, because additional indexes consume storage and increase write costs.
+2. **Punch-in race.** Both requests call `insert_one`. The unique (emp_code, date) index lets one succeed. The other raises `DuplicateKeyError`, and I return 409. There is no check-then-insert.
 
-## 2. Simultaneous punch-ins
+3. **Ties.** I use `$rank`, so tied employees share a rank (1, 2, 2, 4), and I filter `rank <= limit` afterwards. Everyone tied at the cutoff is returned, so the list can be longer than `limit`.
 
-Two requests can attempt to insert attendance for the same employee and date concurrently. The unique compound index allows only one insert to succeed. The other request encounters `DuplicateKeyError`, which the API converts into HTTP 409 Conflict. This database-level constraint is safer than relying on a check-then-insert sequence.
+4. **Headcount.** I start from `employees` (joined on or before month end) and `$lookup` their logs with `preserveNullAndEmptyArrays`, so employees with zero logs still count.
 
-## 3. Leaderboard cutoff ties
-
-The leaderboard uses MongoDB ranking so employees with equal late-minute totals receive the same rank. Filtering is applied after ranking, allowing all employees tied at the cutoff rank to appear. Therefore, the result may contain more rows than the requested limit.
-
-## 4. Department headcount
-
-Headcount includes employees who joined on or before the end of the selected month, including employees without attendance logs. Starting from eligible employees and preserving unmatched lookup results prevents these employees from being excluded.
-
-## 5. Scaling to 100 times the data
-
-I would inspect query execution plans and benchmark the most expensive analytics first. Monthly pre-aggregated summaries could reduce repeated aggregation work, while source attendance records remain available for verification. I would also evaluate keyset pagination for large attendance listings and validate improvements using realistic load tests before introducing additional infrastructure.
+5. **Change at 100x.** I would copy `department` into each attendance record, so the trend and leaderboard don't need a `$lookup` to `employees` for every log.
